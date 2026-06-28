@@ -346,7 +346,7 @@ function App() {
         />
       )}
       {route.view === "audience" && eventState && (
-        <Audience eventState={eventState} clientId={clientId} showToast={showToast} />
+        <Audience eventState={eventState} clientId={clientId} logoUrl={logoUrl} showToast={showToast} />
       )}
       {route.view === "display" && eventState && links && (
         <Display
@@ -798,7 +798,17 @@ function CopyLine({ label, value, onCopy }: { label: string; value: string; onCo
   );
 }
 
-function Audience({ eventState, clientId, showToast }: { eventState: EventState; clientId: string; showToast: (message: string) => void }) {
+function Audience({
+  eventState,
+  clientId,
+  logoUrl,
+  showToast
+}: {
+  eventState: EventState;
+  clientId: string;
+  logoUrl: string;
+  showToast: (message: string) => void;
+}) {
   const [activeTab, setActiveTab] = useState<"chat" | "poll">("chat");
   const [message, setMessage] = useState("");
   const [selectedVote, setSelectedVoteState] = useState(() => getSelectedVote(eventState.id, eventState.poll.id));
@@ -897,6 +907,9 @@ function Audience({ eventState, clientId, showToast }: { eventState: EventState;
               </div>
             </div>
           )}
+        </div>
+        <div className="phone-logo-wrap">
+          <img className="phone-logo" src={logoUrl} alt="Event logo" />
         </div>
       </section>
     </main>
