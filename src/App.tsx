@@ -842,7 +842,6 @@ function Audience({
         <header className="phone-header">
           <img className="phone-logo" src={logoUrl} alt="Event logo" />
           <h2>{eventState.name}</h2>
-          <p className="muted">{eventState.poll.question}</p>
         </header>
         <nav className="tabs">
           <button className={`tab ${activeTab === "chat" ? "active" : ""}`} type="button" onClick={() => setActiveTab("chat")}>

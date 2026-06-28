@@ -451,16 +451,19 @@ h3 {
 
 .phone-header {
   display: grid;
-  justify-items: start;
-  gap: 6px;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
   padding: 18px;
   background: #ffffff;
   color: var(--ink);
   border-bottom: 1px solid #eaecf0;
 }
 
-.phone-header .muted {
-  color: #475467;
+.phone-header h2 {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 1.45rem;
 }
 
 .tabs {
@@ -496,7 +499,7 @@ h3 {
 }
 
 .phone-logo {
-  width: min(104px, 32vw);
+  width: min(104px, 28vw);
   height: auto;
   object-fit: contain;
 }
