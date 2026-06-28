@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 96" role="img" aria-labelledby="title">
+  <title id="title">Live Poll Logo</title>
+  <rect width="320" height="96" rx="18" fill="#ffffff"/>
+  <rect x="18" y="18" width="60" height="60" rx="14" fill="#101828"/>
+  <path d="M37 52.5 47 62.5 61.5 35" fill="none" stroke="#12B76A" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="94" y="44" font-family="Inter, Arial, sans-serif" font-size="25" font-weight="800" fill="#101828">Live Poll</text>
+  <text x="95" y="68" font-family="Inter, Arial, sans-serif" font-size="14" font-weight="700" fill="#667085">Audience interaction</text>
+</svg>

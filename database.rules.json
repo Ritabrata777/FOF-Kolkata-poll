@@ -1,0 +1,18 @@
+{
+  "rules": {
+    ".read": true,
+    "events": {
+      "$eventId": {
+        ".write": true
+      }
+    },
+    "live": {
+      "$eventId": {
+        ".write": true
+      }
+    },
+    "settings": {
+      ".write": true
+    }
+  }
+}
