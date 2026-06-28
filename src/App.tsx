@@ -1,4 +1,4 @@
-import { type CSSProperties, type FormEvent, useEffect, useMemo, useState } from "react";
+import { type CSSProperties, type FormEvent, type PointerEvent, useEffect, useMemo, useRef, useState } from "react";
 import { isFirebaseConfigured } from "./firebaseClient";
 import {
   activateQuestion as activateFirebaseQuestion,
@@ -812,6 +812,7 @@ function Audience({
   const [activeTab, setActiveTab] = useState<"chat" | "poll">("chat");
   const [message, setMessage] = useState("");
   const [selectedVote, setSelectedVoteState] = useState(() => getSelectedVote(eventState.id, eventState.poll.id));
+  const messageInputRef = useRef<HTMLTextAreaElement | null>(null);
 
   useEffect(() => {
     setSelectedVoteState(getSelectedVote(eventState.id, eventState.poll.id));
@@ -819,10 +820,19 @@ function Audience({
 
   const sendMessage = () => {
     const text = message.trim();
-    if (!text) return;
+    if (!text) {
+      messageInputRef.current?.focus({ preventScroll: true });
+      return;
+    }
     sendFirebaseMessage(eventState.id, clientId, text).catch((error) => showToast((error as Error).message));
     setMessage("");
     showToast("Sent");
+    messageInputRef.current?.focus({ preventScroll: true });
+  };
+
+  const handleSendPointerDown = (event: PointerEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    sendMessage();
   };
 
   const sendReaction = (emoji: string) => {
@@ -859,6 +869,7 @@ function Audience({
                 <textarea
                   className="textarea"
                   id="message"
+                  ref={messageInputRef}
                   maxLength={90}
                   placeholder="Type something"
                   value={message}
@@ -871,7 +882,14 @@ function Audience({
                   }}
                 />
               </div>
-              <button className="button green" type="button" onClick={sendMessage}>
+              <button
+                className="button green"
+                type="button"
+                onPointerDown={handleSendPointerDown}
+                onClick={(event) => {
+                  if (event.detail === 0) sendMessage();
+                }}
+              >
                 Send Message
               </button>
               <div className="reaction-grid">
