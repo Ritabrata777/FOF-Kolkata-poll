@@ -453,8 +453,8 @@ h3 {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
-  gap: 14px;
-  padding: 18px;
+  gap: 12px;
+  padding: 14px 16px;
   background: #ffffff;
   color: var(--ink);
   border-bottom: 1px solid #eaecf0;
@@ -463,7 +463,8 @@ h3 {
 .phone-header h2 {
   min-width: 0;
   overflow-wrap: anywhere;
-  font-size: 1.45rem;
+  font-size: 1.25rem;
+  line-height: 1.1;
 }
 
 .tabs {
@@ -499,7 +500,7 @@ h3 {
 }
 
 .phone-logo {
-  width: min(104px, 28vw);
+  width: min(72px, 22vw);
   height: auto;
   object-fit: contain;
 }
