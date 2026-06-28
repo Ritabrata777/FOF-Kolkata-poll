@@ -4,6 +4,7 @@ import {
   activateQuestion as activateFirebaseQuestion,
   addQuestion as addFirebaseQuestion,
   createEvent as createFirebaseEvent,
+  deleteQuestion as deleteFirebaseQuestion,
   deleteEvent as deleteFirebaseEvent,
   getLogoUrl,
   makeEventLinks,
@@ -563,6 +564,7 @@ function AdminEvent({
   const [question, setQuestion] = useState(selectedQuestion.question);
   const [options, setOptions] = useState(selectedQuestion.options.map((option) => option.text));
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isDeletingQuestion, setIsDeletingQuestion] = useState(false);
 
   useEffect(() => {
     if (!eventState.questions.some((questionItem) => questionItem.id === selectedQuestionId)) {
@@ -616,6 +618,30 @@ function AdminEvent({
   const makeQuestionLive = async () => {
     await activateFirebaseQuestion(eventState.id, selectedQuestion.id);
     showToast("Question is live");
+  };
+
+  const deleteQuestion = async () => {
+    if (eventState.questions.length <= 1) {
+      showToast("Keep at least one question");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Delete this question?\n\n"${selectedQuestion.question}"\n\nVotes for this question will also be removed.`
+    );
+    if (!confirmed) return;
+
+    const remainingQuestions = eventState.questions.filter((questionItem) => questionItem.id !== selectedQuestion.id);
+    setIsDeletingQuestion(true);
+    try {
+      await deleteFirebaseQuestion(eventState.id, selectedQuestion.id);
+      setSelectedQuestionId(isSelectedLive ? remainingQuestions[0].id : eventState.activeQuestionId);
+      showToast(isSelectedLive ? "Question deleted; another question is live" : "Question deleted");
+    } catch (error) {
+      showToast((error as Error).message || "Could not delete question");
+    } finally {
+      setIsDeletingQuestion(false);
+    }
   };
 
   const resetEvent = async () => {
@@ -736,6 +762,14 @@ function AdminEvent({
                   Make Live
                 </button>
               )}
+              <button
+                type="button"
+                className="button red"
+                onClick={deleteQuestion}
+                disabled={isDeletingQuestion || eventState.questions.length <= 1}
+              >
+                {isDeletingQuestion ? "Deleting..." : "Delete Question"}
+              </button>
               <button className="button green" type="submit">
                 Save Question
               </button>

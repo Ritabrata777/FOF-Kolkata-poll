@@ -411,6 +411,45 @@ export async function activateQuestion(eventId: string, questionId: string) {
   await update(ref(db), updates);
 }
 
+export async function deleteQuestion(eventId: string, questionId: string) {
+  const db = getFirebaseDatabase();
+  const eventSnapshot = await get(ref(db, `events/${eventId}`));
+  if (!eventSnapshot.exists()) {
+    throw new Error("Event not found");
+  }
+
+  const event = eventSnapshot.val() as DbEvent;
+  const questions = getEventQuestions(event);
+  const targetQuestion = questions.find((question) => question.id === questionId);
+  if (!targetQuestion) {
+    throw new Error("Question not found");
+  }
+  if (questions.length <= 1) {
+    throw new Error("Keep at least one question in the event");
+  }
+
+  const activeQuestionId =
+    (event.activeQuestionId && questions.some((question) => question.id === event.activeQuestionId)
+      ? event.activeQuestionId
+      : questions.find((question) => question.active)?.id) || questions[0].id;
+  const remainingQuestions = questions.filter((question) => question.id !== questionId);
+  const updates: Record<string, unknown> = {
+    [`events/${eventId}/questions/${questionId}`]: null,
+    [`events/${eventId}/votes/${questionId}`]: null
+  };
+
+  if (activeQuestionId === questionId) {
+    const nextActiveQuestion = remainingQuestions[0];
+    updates[`events/${eventId}/activeQuestionId`] = nextActiveQuestion.id;
+    updates[`events/${eventId}/poll`] = pollMirror(nextActiveQuestion);
+    for (const question of remainingQuestions) {
+      updates[`events/${eventId}/questions/${question.id}/active`] = question.id === nextActiveQuestion.id;
+    }
+  }
+
+  await update(ref(db), updates);
+}
+
 export async function resetEvent(eventId: string) {
   const db = getFirebaseDatabase();
   await update(ref(db), {
