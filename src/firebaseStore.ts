@@ -22,17 +22,28 @@ interface DbPollOption {
   text: string;
 }
 
+interface DbPollQuestion {
+  id: string;
+  question: string;
+  active: boolean;
+  multiple: boolean;
+  order: number;
+  options: Record<string, DbPollOption>;
+}
+
 interface DbEvent {
   id: string;
   name: string;
   createdAt: string;
-  poll: {
+  activeQuestionId?: string;
+  poll?: {
     question: string;
     active: boolean;
     multiple: boolean;
     options: Record<string, DbPollOption>;
   };
-  votes?: Record<string, string>;
+  questions?: Record<string, DbPollQuestion>;
+  votes?: Record<string, string | Record<string, string>>;
   stats?: Partial<EventStats>;
 }
 
@@ -43,6 +54,13 @@ interface CreateEventInput {
 }
 
 interface UpdatePollInput {
+  questionId?: string;
+  question: string;
+  options: string[];
+  active?: boolean;
+}
+
+interface AddQuestionInput {
   question: string;
   options: string[];
   active?: boolean;
@@ -52,6 +70,10 @@ function makeId() {
   const bytes = new Uint8Array(3);
   globalThis.crypto.getRandomValues(bytes);
   return [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function makeQuestionId() {
+  return `question-${makeId()}`;
 }
 
 function makeOptionId(text: string, index: number) {
@@ -83,6 +105,41 @@ function optionsToRecord(options: string[]) {
   );
 }
 
+function ensureOptions(options: string[]) {
+  const optionRecord = optionsToRecord(options);
+  return Object.values(optionRecord).length >= 2 ? optionRecord : optionsToRecord(["Yes", "No"]);
+}
+
+function makeQuestionRecord(input: {
+  id?: string;
+  question: string;
+  options: string[];
+  active?: boolean;
+  order?: number;
+}): DbPollQuestion {
+  return {
+    id: input.id || makeQuestionId(),
+    question: cleanText(input.question, 120) || "Live poll",
+    active: Boolean(input.active),
+    multiple: false,
+    order: input.order ?? Date.now(),
+    options: ensureOptions(input.options)
+  };
+}
+
+function legacyPollToQuestion(event: DbEvent): DbPollQuestion {
+  const poll = event.poll;
+  const id = event.activeQuestionId || "poll";
+  return {
+    id,
+    question: cleanText(poll?.question, 120) || "Live poll",
+    active: Boolean(poll?.active ?? true),
+    multiple: Boolean(poll?.multiple ?? false),
+    order: 0,
+    options: poll?.options || ensureOptions(["Yes", "No"])
+  };
+}
+
 function normalizeStats(stats: Partial<EventStats> = {}): EventStats {
   const reactions = Number(stats.reactions ?? stats.hearts ?? 0) || 0;
   return {
@@ -92,11 +149,22 @@ function normalizeStats(stats: Partial<EventStats> = {}): EventStats {
   };
 }
 
-function eventFromSnapshot(snapshot: DataSnapshot): EventState | null {
-  if (!snapshot.exists()) return null;
-  const event = snapshot.val() as DbEvent;
-  const options = Object.values(event.poll?.options || {});
+function getQuestionVotes(event: DbEvent, questionId: string, hasQuestionBank: boolean) {
   const votes = event.votes || {};
+  const nestedVotes = votes[questionId];
+  if (nestedVotes && typeof nestedVotes === "object") {
+    return nestedVotes as Record<string, string>;
+  }
+
+  const flatVotes = Object.fromEntries(
+    Object.entries(votes).filter(([, value]) => typeof value === "string")
+  ) as Record<string, string>;
+
+  return hasQuestionBank && !Object.keys(flatVotes).length ? {} : flatVotes;
+}
+
+function pollFromQuestion(question: DbPollQuestion, votes: Record<string, string>, active: boolean): Poll {
+  const options = Object.values(question.options || {});
   const counts = Object.fromEntries(options.map((option) => [option.id, 0]));
 
   for (const optionId of Object.values(votes)) {
@@ -104,10 +172,11 @@ function eventFromSnapshot(snapshot: DataSnapshot): EventState | null {
   }
 
   const totalVotes = Object.values(counts).reduce((sum, value) => sum + value, 0);
-  const poll: Poll = {
-    question: cleanText(event.poll?.question, 120) || "Live poll",
-    active: Boolean(event.poll?.active ?? true),
-    multiple: Boolean(event.poll?.multiple ?? false),
+  return {
+    id: question.id,
+    question: cleanText(question.question, 120) || "Live poll",
+    active,
+    multiple: Boolean(question.multiple),
     options: options.map((option) => ({
       id: option.id,
       text: option.text,
@@ -116,12 +185,46 @@ function eventFromSnapshot(snapshot: DataSnapshot): EventState | null {
     })),
     totalVotes
   };
+}
+
+function getEventQuestions(event: DbEvent) {
+  const questionEntries = Object.entries(event.questions || {});
+  if (!questionEntries.length) {
+    return [legacyPollToQuestion(event)];
+  }
+
+  return questionEntries
+    .map(([id, question], index) => ({
+      ...question,
+      id: question.id || id,
+      question: cleanText(question.question, 120) || `Question ${index + 1}`,
+      order: Number(question.order ?? index),
+      options: question.options || ensureOptions(["Yes", "No"])
+    }))
+    .sort((left, right) => left.order - right.order);
+}
+
+function eventFromSnapshot(snapshot: DataSnapshot): EventState | null {
+  if (!snapshot.exists()) return null;
+  const event = snapshot.val() as DbEvent;
+  const questionRecords = getEventQuestions(event);
+  const hasQuestionBank = Boolean(event.questions && Object.keys(event.questions).length);
+  const activeQuestionId =
+    (event.activeQuestionId && questionRecords.some((question) => question.id === event.activeQuestionId)
+      ? event.activeQuestionId
+      : questionRecords.find((question) => question.active)?.id) || questionRecords[0].id;
+  const questions = questionRecords.map((question) =>
+    pollFromQuestion(question, getQuestionVotes(event, question.id, hasQuestionBank), question.id === activeQuestionId)
+  );
+  const poll = questions.find((question) => question.id === activeQuestionId) || questions[0];
 
   return {
     id: event.id,
     name: event.name || "Live Event",
     createdAt: event.createdAt || new Date().toISOString(),
+    activeQuestionId,
     poll,
+    questions,
     stats: normalizeStats(event.stats)
   };
 }
@@ -151,19 +254,28 @@ export async function makeEventLinks(eventId: string): Promise<EventLinks> {
 export async function createEvent(input: CreateEventInput) {
   const db = getFirebaseDatabase();
   const id = makeId();
-  const options = optionsToRecord(input.options);
-  const optionValues = Object.values(options);
-  const safeOptions = optionValues.length >= 2 ? options : optionsToRecord(["Yes", "No"]);
+  const questionId = makeQuestionId();
+  const question = makeQuestionRecord({
+    id: questionId,
+    question: input.question,
+    options: input.options,
+    active: true,
+    order: Date.now()
+  });
 
   const event: DbEvent = {
     id,
     name: cleanText(input.name, 80) || "Live Event",
     createdAt: new Date().toISOString(),
+    activeQuestionId: questionId,
     poll: {
-      question: cleanText(input.question, 120) || "What should we discuss next?",
+      question: question.question,
       active: true,
       multiple: false,
-      options: safeOptions
+      options: question.options
+    },
+    questions: {
+      [questionId]: question
     },
     votes: {},
     stats: {
@@ -203,23 +315,100 @@ export function subscribeEvent(
   return unsubscribe;
 }
 
+function pollMirror(question: DbPollQuestion) {
+  return {
+    question: question.question,
+    active: true,
+    multiple: false,
+    options: question.options
+  };
+}
+
 export async function updatePoll(eventId: string, input: UpdatePollInput) {
   const db = getFirebaseDatabase();
-  const question = cleanText(input.question, 120);
+  const questionText = cleanText(input.question, 120);
   const options = Object.values(optionsToRecord(input.options));
-  if (!question || options.length < 2) {
+  if (!questionText || options.length < 2) {
     throw new Error("Poll needs a question and at least two options");
   }
 
-  await update(ref(db), {
-    [`events/${eventId}/poll`]: {
-      question,
-      active: Boolean(input.active ?? true),
-      multiple: false,
-      options: Object.fromEntries(options.map((option) => [option.id, option]))
-    },
-    [`events/${eventId}/votes`]: null
+  const eventSnapshot = await get(ref(db, `events/${eventId}`));
+  const currentEvent = eventFromSnapshot(eventSnapshot);
+  const questionId = input.questionId || currentEvent?.activeQuestionId || makeQuestionId();
+  const existingSnapshot = await get(ref(db, `events/${eventId}/questions/${questionId}`));
+  const existingQuestion = existingSnapshot.val() as DbPollQuestion | null;
+  const nextQuestion = makeQuestionRecord({
+    id: questionId,
+    question: questionText,
+    options: input.options,
+    active: Boolean(input.active ?? currentEvent?.activeQuestionId === questionId),
+    order: Number(existingQuestion?.order ?? Date.now())
   });
+  const isActive = Boolean(input.active ?? currentEvent?.activeQuestionId === questionId);
+  const updates: Record<string, unknown> = {
+    [`events/${eventId}/questions/${questionId}`]: nextQuestion,
+    [`events/${eventId}/votes/${questionId}`]: null
+  };
+
+  if (isActive) {
+    updates[`events/${eventId}/activeQuestionId`] = questionId;
+    updates[`events/${eventId}/poll`] = pollMirror(nextQuestion);
+    for (const question of currentEvent?.questions || []) {
+      updates[`events/${eventId}/questions/${question.id}/active`] = question.id === questionId;
+    }
+  }
+
+  await update(ref(db), updates);
+}
+
+export async function addQuestion(eventId: string, input: AddQuestionInput) {
+  const db = getFirebaseDatabase();
+  const question = makeQuestionRecord({
+    question: input.question,
+    options: input.options,
+    active: Boolean(input.active),
+    order: Date.now()
+  });
+  const updates: Record<string, unknown> = {
+    [`events/${eventId}/questions/${question.id}`]: question,
+    [`events/${eventId}/votes/${question.id}`]: null
+  };
+
+  if (input.active) {
+    const eventSnapshot = await get(ref(db, `events/${eventId}`));
+    const currentEvent = eventFromSnapshot(eventSnapshot);
+    updates[`events/${eventId}/activeQuestionId`] = question.id;
+    updates[`events/${eventId}/poll`] = pollMirror(question);
+    for (const existingQuestion of currentEvent?.questions || []) {
+      updates[`events/${eventId}/questions/${existingQuestion.id}/active`] = false;
+    }
+  }
+
+  await update(ref(db), updates);
+  return question.id;
+}
+
+export async function activateQuestion(eventId: string, questionId: string) {
+  const db = getFirebaseDatabase();
+  const questionSnapshot = await get(ref(db, `events/${eventId}/questions/${questionId}`));
+  const question = questionSnapshot.val() as DbPollQuestion | null;
+  if (!question) {
+    throw new Error("Question not found");
+  }
+
+  const eventSnapshot = await get(ref(db, `events/${eventId}`));
+  const currentEvent = eventFromSnapshot(eventSnapshot);
+  const updates: Record<string, unknown> = {
+    [`events/${eventId}/activeQuestionId`]: questionId,
+    [`events/${eventId}/poll`]: pollMirror(question)
+  };
+
+  for (const existingQuestion of currentEvent?.questions || []) {
+    updates[`events/${eventId}/questions/${existingQuestion.id}/active`] = existingQuestion.id === questionId;
+  }
+  updates[`events/${eventId}/questions/${questionId}/active`] = true;
+
+  await update(ref(db), updates);
 }
 
 export async function resetEvent(eventId: string) {
@@ -277,9 +466,9 @@ export async function sendReaction(eventId: string, clientId: string, emoji: str
   window.setTimeout(() => remove(reactionRef), LIVE_TTL_MS + 600);
 }
 
-export async function vote(eventId: string, clientId: string, optionId: string) {
+export async function vote(eventId: string, clientId: string, questionId: string, optionId: string) {
   const db = getFirebaseDatabase();
-  await set(ref(db, `events/${eventId}/votes/${clientId}`), optionId);
+  await set(ref(db, `events/${eventId}/votes/${questionId}/${clientId}`), optionId);
 }
 
 export function subscribeLiveMessages(eventId: string, callback: (message: ChatMessagePayload) => void) {
@@ -321,14 +510,14 @@ export function subscribeLiveReactions(eventId: string, callback: (reaction: Rea
 export async function getLogoUrl() {
   const db = getFirebaseDatabase();
   const snapshot = await get(ref(db, "settings/logoUrl"));
-  return (snapshot.val() as string | null) || "/logo.svg";
+  return (snapshot.val() as string | null) || "/logo.png";
 }
 
 export function subscribeLogo(callback: (logoUrl: string) => void) {
   const db = getFirebaseDatabase();
   const logoRef = ref(db, "settings/logoUrl");
   const unsubscribe = onValue(logoRef, (snapshot) => {
-    callback((snapshot.val() as string | null) || "/logo.svg");
+    callback((snapshot.val() as string | null) || "/logo.png");
   });
 
   return unsubscribe;

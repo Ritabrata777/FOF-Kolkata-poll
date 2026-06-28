@@ -1,6 +1,8 @@
 import { type CSSProperties, type FormEvent, useEffect, useMemo, useState } from "react";
 import { isFirebaseConfigured } from "./firebaseClient";
 import {
+  activateQuestion as activateFirebaseQuestion,
+  addQuestion as addFirebaseQuestion,
   createEvent as createFirebaseEvent,
   deleteEvent as deleteFirebaseEvent,
   getLogoUrl,
@@ -25,6 +27,7 @@ interface PollOption {
 }
 
 interface Poll {
+  id: string;
   question: string;
   active: boolean;
   multiple: boolean;
@@ -42,7 +45,9 @@ interface EventState {
   id: string;
   name: string;
   createdAt: string;
+  activeQuestionId: string;
   poll: Poll;
+  questions: Poll[];
   stats: EventStats;
 }
 
@@ -145,16 +150,16 @@ function reactionCount(stats: EventStats) {
   return stats.reactions ?? stats.hearts ?? 0;
 }
 
-function getVoteKey(eventId: string) {
-  return `live-event-vote-${eventId}`;
+function getVoteKey(eventId: string, questionId: string) {
+  return `live-event-vote-${eventId}-${questionId}`;
 }
 
-function getSelectedVote(eventId: string) {
-  return localStorage.getItem(getVoteKey(eventId));
+function getSelectedVote(eventId: string, questionId: string) {
+  return localStorage.getItem(getVoteKey(eventId, questionId));
 }
 
-function setSelectedVote(eventId: string, optionId: string) {
-  localStorage.setItem(getVoteKey(eventId), optionId);
+function setSelectedVote(eventId: string, questionId: string, optionId: string) {
+  localStorage.setItem(getVoteKey(eventId, questionId), optionId);
 }
 
 function readFileAsDataUrl(file: File) {
@@ -190,7 +195,7 @@ function App() {
   const clientId = useMemo(getClientId, []);
   const [eventState, setEventState] = useState<EventState | null>(null);
   const [links, setLinks] = useState<EventLinks | null>(null);
-  const [logoUrl, setLogoUrl] = useState("/logo.svg");
+  const [logoUrl, setLogoUrl] = useState("/logo.png");
   const [displayMessages, setDisplayMessages] = useState<DisplayMessage[]>([]);
   const [floatingReactions, setFloatingReactions] = useState<FloatingReaction[]>([]);
   const [toast, setToast] = useState<ToastState | null>(null);
@@ -551,14 +556,28 @@ function AdminEvent({
   setLogoUrl: (value: string) => void;
   showToast: (message: string) => void;
 }) {
-  const [question, setQuestion] = useState(eventState.poll.question);
-  const [options, setOptions] = useState(eventState.poll.options.map((option) => option.text));
+  const [selectedQuestionId, setSelectedQuestionId] = useState(eventState.activeQuestionId);
+  const selectedQuestion =
+    eventState.questions.find((questionItem) => questionItem.id === selectedQuestionId) || eventState.poll;
+  const isSelectedLive = selectedQuestion.id === eventState.activeQuestionId;
+  const [question, setQuestion] = useState(selectedQuestion.question);
+  const [options, setOptions] = useState(selectedQuestion.options.map((option) => option.text));
   const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
-    setQuestion(eventState.poll.question);
-    setOptions(eventState.poll.options.map((option) => option.text));
-  }, [eventState.poll.question, eventState.poll.options.map((option) => option.id).join("|")]);
+    if (!eventState.questions.some((questionItem) => questionItem.id === selectedQuestionId)) {
+      setSelectedQuestionId(eventState.activeQuestionId);
+    }
+  }, [eventState.activeQuestionId, eventState.questions, selectedQuestionId]);
+
+  useEffect(() => {
+    setQuestion(selectedQuestion.question);
+    setOptions(selectedQuestion.options.map((option) => option.text));
+  }, [
+    selectedQuestion.id,
+    selectedQuestion.question,
+    selectedQuestion.options.map((option) => `${option.id}:${option.text}`).join("|")
+  ]);
 
   const updateOption = (index: number, value: string) => {
     setOptions((current) => current.map((option, optionIndex) => (optionIndex === index ? value : option)));
@@ -575,8 +594,28 @@ function AdminEvent({
       showToast("Add at least two poll options");
       return;
     }
-    await updateFirebasePoll(eventState.id, { question, options: cleanOptions, active: true });
-    showToast("Poll saved");
+    await updateFirebasePoll(eventState.id, {
+      questionId: selectedQuestion.id,
+      question,
+      options: cleanOptions,
+      active: isSelectedLive
+    });
+    showToast(isSelectedLive ? "Live question saved" : "Question saved");
+  };
+
+  const addQuestion = async () => {
+    const questionId = await addFirebaseQuestion(eventState.id, {
+      question: `Question ${eventState.questions.length + 1}`,
+      options: ["Yes", "No"],
+      active: false
+    });
+    setSelectedQuestionId(questionId);
+    showToast("Question added");
+  };
+
+  const makeQuestionLive = async () => {
+    await activateFirebaseQuestion(eventState.id, selectedQuestion.id);
+    showToast("Question is live");
   };
 
   const resetEvent = async () => {
@@ -614,7 +653,7 @@ function AdminEvent({
               <p className="muted">Event code: {eventState.id}</p>
             </div>
             <div className="grid grid-3">
-              <Stat label="Votes" value={eventState.poll.totalVotes} />
+              <Stat label="Live Votes" value={eventState.poll.totalVotes} />
               <Stat label="Messages" value={eventState.stats.messages} />
               <Stat label="Reactions" value={reactionCount(eventState.stats)} />
             </div>
@@ -634,11 +673,41 @@ function AdminEvent({
             </div>
           </div>
 
+          <section className="panel panel-pad grid">
+            <div className="section-head">
+              <div>
+                <h2>Questions</h2>
+                <p className="muted">Add questions here, then choose which one is live.</p>
+              </div>
+              <button type="button" className="button secondary" onClick={addQuestion}>
+                Add Question
+              </button>
+            </div>
+            <div className="question-list">
+              {eventState.questions.map((questionItem, index) => (
+                <button
+                  key={questionItem.id}
+                  className={`question-item ${questionItem.id === selectedQuestion.id ? "selected" : ""} ${
+                    questionItem.id === eventState.activeQuestionId ? "live" : ""
+                  }`}
+                  type="button"
+                  onClick={() => setSelectedQuestionId(questionItem.id)}
+                >
+                  <span className="question-index">Q{index + 1}</span>
+                  <strong>{questionItem.question}</strong>
+                  <small>{questionItem.id === eventState.activeQuestionId ? "Live now" : `${questionItem.totalVotes} votes`}</small>
+                </button>
+              ))}
+            </div>
+          </section>
+
           <form className="panel panel-pad grid" onSubmit={updatePoll}>
             <div className="grid" style={{ gap: 8 }}>
-              <h2>Poll</h2>
+              <h2>{isSelectedLive ? "Live Question" : "Edit Question"}</h2>
               <p className="muted">
-                {eventState.poll.totalVotes ? "Saving this poll will reset current votes." : "Options can be added before the audience votes."}
+                {selectedQuestion.totalVotes
+                  ? "Saving text or options resets votes for this question."
+                  : "Changes save to this question only."}
               </p>
             </div>
             <div className="field">
@@ -662,8 +731,13 @@ function AdminEvent({
               <button type="button" className="button secondary" onClick={() => setOptions((current) => [...current, ""])}>
                 Add Option
               </button>
+              {!isSelectedLive && (
+                <button type="button" className="button" onClick={makeQuestionLive}>
+                  Make Live
+                </button>
+              )}
               <button className="button green" type="submit">
-                Save Poll
+                Save Question
               </button>
             </div>
           </form>
@@ -719,7 +793,11 @@ function CopyLine({ label, value, onCopy }: { label: string; value: string; onCo
 function Audience({ eventState, clientId, showToast }: { eventState: EventState; clientId: string; showToast: (message: string) => void }) {
   const [activeTab, setActiveTab] = useState<"chat" | "poll">("chat");
   const [message, setMessage] = useState("");
-  const [selectedVote, setSelectedVoteState] = useState(() => getSelectedVote(eventState.id));
+  const [selectedVote, setSelectedVoteState] = useState(() => getSelectedVote(eventState.id, eventState.poll.id));
+
+  useEffect(() => {
+    setSelectedVoteState(getSelectedVote(eventState.id, eventState.poll.id));
+  }, [eventState.id, eventState.poll.id]);
 
   const sendMessage = () => {
     const text = message.trim();
@@ -734,9 +812,9 @@ function Audience({ eventState, clientId, showToast }: { eventState: EventState;
   };
 
   const vote = (optionId: string) => {
-    setSelectedVote(eventState.id, optionId);
+    setSelectedVote(eventState.id, eventState.poll.id, optionId);
     setSelectedVoteState(optionId);
-    voteFirebase(eventState.id, clientId, optionId).catch((error) => showToast((error as Error).message));
+    voteFirebase(eventState.id, clientId, eventState.poll.id, optionId).catch((error) => showToast((error as Error).message));
     showToast("Vote sent");
   };
 

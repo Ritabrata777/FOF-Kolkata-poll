@@ -6,6 +6,7 @@ export interface PollOption {
 }
 
 export interface Poll {
+  id: string;
   question: string;
   active: boolean;
   multiple: boolean;
@@ -23,7 +24,9 @@ export interface EventState {
   id: string;
   name: string;
   createdAt: string;
+  activeQuestionId: string;
   poll: Poll;
+  questions: Poll[];
   stats: EventStats;
 }
 
