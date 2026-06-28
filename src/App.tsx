@@ -106,6 +106,8 @@ const REACTIONS: ReactionChoice[] = [
 const DISPLAY_MESSAGE_LIMIT = 6;
 const DISPLAY_FEED_TTL_MS = 4000;
 const DISPLAY_REACTION_LIMIT = 12;
+const DEFAULT_POLL_QUESTION = "Which topic should we cover next?";
+const DEFAULT_POLL_OPTIONS = ["Firebase", "AI/ML", "Cloud Run", "Kubernetes"];
 
 function parseRoute(): RouteState {
   const parts = window.location.pathname.split("/").filter(Boolean);
@@ -479,8 +481,8 @@ function AdminCreate({
   showToast: (message: string) => void;
 }) {
   const [name, setName] = useState("Live Event");
-  const [question, setQuestion] = useState("Which topic should we cover next?");
-  const [options, setOptions] = useState(["Firebase", "AI/ML", "Cloud Run", "Kubernetes"]);
+  const [question, setQuestion] = useState(DEFAULT_POLL_QUESTION);
+  const [options, setOptions] = useState(DEFAULT_POLL_OPTIONS);
 
   const updateOption = (index: number, value: string) => {
     setOptions((current) => current.map((option, optionIndex) => (optionIndex === index ? value : option)));
@@ -607,8 +609,8 @@ function AdminEvent({
 
   const addQuestion = async () => {
     const questionId = await addFirebaseQuestion(eventState.id, {
-      question: `Question ${eventState.questions.length + 1}`,
-      options: ["Yes", "No"],
+      question: DEFAULT_POLL_QUESTION,
+      options: DEFAULT_POLL_OPTIONS,
       active: false
     });
     setSelectedQuestionId(questionId);
@@ -737,11 +739,11 @@ function AdminEvent({
               </p>
             </div>
             <div className="field">
-              <label htmlFor="edit-question">Question</label>
+              <label htmlFor="edit-question">Poll question</label>
               <input className="input" id="edit-question" value={question} maxLength={120} onChange={(event) => setQuestion(event.target.value)} />
             </div>
             <div className="field">
-              <span className="small-label">Options</span>
+              <span className="small-label">Poll options</span>
               <div className="grid">
                 {options.map((option, index) => (
                   <OptionInput
