@@ -590,8 +590,8 @@ h3 {
   top: clamp(24px, 4vh, 44px);
   left: clamp(28px, 4vw, 72px);
   width: auto;
-  max-width: min(300px, 28vw);
-  height: clamp(58px, 8vh, 96px);
+  max-width: min(420px, 34vw);
+  height: clamp(82px, 11vh, 136px);
   object-fit: contain;
   z-index: 3;
 }
