@@ -481,22 +481,14 @@ function AdminCreate({
   showToast: (message: string) => void;
 }) {
   const [name, setName] = useState("Live Event");
-  const [question, setQuestion] = useState(DEFAULT_POLL_QUESTION);
-  const [options, setOptions] = useState(DEFAULT_POLL_OPTIONS);
-
-  const updateOption = (index: number, value: string) => {
-    setOptions((current) => current.map((option, optionIndex) => (optionIndex === index ? value : option)));
-  };
-
-  const removeOption = (index: number) => {
-    setOptions((current) => (current.length <= 2 ? current : current.filter((_, optionIndex) => optionIndex !== index)));
-  };
 
   const createEvent = async (event: FormEvent) => {
     event.preventDefault();
-    const cleanOptions = options.map((option) => option.trim()).filter(Boolean);
-    if (cleanOptions.length < 2) return;
-    const data = await createFirebaseEvent({ name, question, options: cleanOptions });
+    const data = await createFirebaseEvent({
+      name,
+      question: DEFAULT_POLL_QUESTION,
+      options: DEFAULT_POLL_OPTIONS
+    });
     window.location.href = `/admin/${data.id}`;
   };
 
@@ -512,27 +504,7 @@ function AdminCreate({
             <label htmlFor="event-name">Event name</label>
             <input className="input" id="event-name" value={name} maxLength={80} onChange={(event) => setName(event.target.value)} />
           </div>
-          <div className="field">
-            <label htmlFor="poll-question">Poll question</label>
-            <input className="input" id="poll-question" value={question} maxLength={120} onChange={(event) => setQuestion(event.target.value)} />
-          </div>
-          <div className="field">
-            <span className="small-label">Poll options</span>
-            <div className="grid">
-              {options.map((option, index) => (
-                <OptionInput
-                  key={index}
-                  value={option}
-                  onChange={(value) => updateOption(index, value)}
-                  onRemove={() => removeOption(index)}
-                />
-              ))}
-            </div>
-          </div>
           <div className="actions">
-            <button type="button" className="button secondary" onClick={() => setOptions((current) => [...current, ""])}>
-              Add Option
-            </button>
             <button className="button green" type="submit">
               Create Event
             </button>
