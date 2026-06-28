@@ -840,6 +840,7 @@ function Audience({
     <main className="phone-shell">
       <section className="phone-card">
         <header className="phone-header">
+          <img className="phone-logo" src={logoUrl} alt="Event logo" />
           <h2>{eventState.name}</h2>
           <p className="muted">{eventState.poll.question}</p>
         </header>
@@ -907,9 +908,6 @@ function Audience({
               </div>
             </div>
           )}
-        </div>
-        <div className="phone-logo-wrap">
-          <img className="phone-logo" src={logoUrl} alt="Event logo" />
         </div>
       </section>
     </main>

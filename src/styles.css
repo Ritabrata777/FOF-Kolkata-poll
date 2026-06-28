@@ -450,6 +450,9 @@ h3 {
 }
 
 .phone-header {
+  display: grid;
+  justify-items: start;
+  gap: 6px;
   padding: 18px;
   background: #ffffff;
   color: var(--ink);
@@ -492,14 +495,8 @@ h3 {
   padding: 18px;
 }
 
-.phone-logo-wrap {
-  display: flex;
-  justify-content: flex-start;
-  padding: 0 18px 18px;
-}
-
 .phone-logo {
-  width: min(112px, 34vw);
+  width: min(104px, 32vw);
   height: auto;
   object-fit: contain;
 }
